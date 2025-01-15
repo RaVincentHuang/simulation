@@ -9,3 +9,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.19", features = ["extension-module"] }
+graph-simulation = { path = "lib/graph-simulation" }
