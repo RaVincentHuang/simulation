@@ -260,8 +260,8 @@ impl Adjacency<'_> for NetworkXGraph {}
 impl AdjacencyInv<'_> for NetworkXGraph {}
 
 // 模块定义
-#[pymodule]
-pub fn networkx_graph(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_class::<NetworkXGraph>()?;
-    Ok(())
-}
+// #[pymodule]
+// pub fn networkx_graph(_py: Python, m: &PyModule) -> PyResult<()> {
+//     m.add_class::<NetworkXGraph>()?;
+//     Ok(())
+// }
