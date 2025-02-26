@@ -1,5 +1,7 @@
+use graph_simulation::algorithm::simulation::Simulation;
 use graph_simulation::graph::base::Graph;
-use pyo3::prelude::*;
+use pyo3::types::PySet;
+use pyo3::{prelude::*, types::PyDict};
 use graph_simulation::graph::labeled_graph::{Label, Labeled};
 use graph_simulation::graph::base::{Directed, Adjacency, AdjacencyInv};
 
@@ -7,23 +9,40 @@ use graph_simulation::graph::base::{Directed, Adjacency, AdjacencyInv};
 use pyo3::prelude::*;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+use std::path::Display;
 use std::sync::Arc;
 
 type SharedRustFn = Arc<dyn Fn(&Attributes, &Attributes) -> bool + Send + Sync>;
 
 
 // 自定义图结构
-#[pyclass]
-#[derive(Clone)]
-pub struct NetworkXGraph {
-    nodes: Vec<Node>,
-    edges: Vec<Edge>,
-    node_indices: HashMap<String, usize>,
-    same_label_fn: Option<SharedRustFn>,
+
+#[derive(Debug)]
+struct Attributes(HashMap<String, Py<PyAny>>);
+
+impl Clone for Attributes {
+    fn clone(&self) -> Self {
+        Python::with_gil(|py| {
+            let cloned_map = self.0.iter()
+                .map(|(k, v)| (k.clone(), v.clone_ref(py)))
+                .collect();
+            Attributes(cloned_map)
+        })
+    }
 }
 
-#[derive(Clone, Debug)]
-struct Attributes(HashMap<String, PyObject>);
+impl std::fmt::Display for Attributes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut entries: Vec<_> = self.0.iter().collect();
+        entries.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
+
+        write!(f, "{{")?;
+        for (key, value) in entries {
+            write!(f, "{}: {}, ", key, value)?;
+        }
+        write!(f, "}}")
+    }
+}
 
 impl PartialEq for Attributes {
     fn eq(&self, other: &Self) -> bool {
@@ -84,11 +103,37 @@ pub struct Node {
     attributes: Attributes,
 }
 
+impl std::fmt::Display for Node {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Node({})", self.id)
+    }
+}
+
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Edge {
     source: usize,
     target: usize,
     attributes: Attributes,
+}
+
+#[derive(Clone)]
+#[pyclass]
+pub struct NetworkXGraph {
+    nodes: Vec<Node>,
+    edges: Vec<Edge>,
+    node_indices: HashMap<String, usize>,
+    same_label_fn: Option<SharedRustFn>,
+}
+
+fn convert_to_string(obj: &PyObject) -> PyResult<String> {
+    Python::with_gil(|py| {
+        // Try direct conversion first
+        obj.call_method0(py, "__str__")?.extract::<String>(py)
+            .or_else(|_| {
+                // If that fails, try to convert to a string using repr
+                obj.call_method0(py, "__repr__")?.extract::<String>(py)
+            })
+    })
 }
 
 #[pymethods]
@@ -105,55 +150,61 @@ impl NetworkXGraph {
 
     // 从NetworkX图转换的静态方法
     #[staticmethod]
-    fn from_networkx(py: Python, nx_graph: &PyAny) -> PyResult<Self> {
+    fn from_networkx(nx_graph: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let nodes = nx_graph.getattr("nodes")?.call_method1("items", ())?;
+        let edges = nx_graph.getattr("edges")?.call_method1("data", ())?;
+
         let mut graph = NetworkXGraph::new();
+
+        for node in nodes.try_iter()? {
+            let node = node?;
+            let id = node.call_method1("__getitem__", (0, ))?.extract::<PyObject>()?;
+            let id = convert_to_string(&id)?;
+            let attrs = node.call_method1("__getitem__", (1, ))?.extract::<HashMap<String, PyObject>>()?;
+            graph.add_node(id, attrs);
+        }
+        for edge in edges.try_iter()? {
+            let edge = edge?;
+            let source = edge.call_method1("__getitem__", (0, ))?.extract::<PyObject>()?;
+            let source = convert_to_string(&source)?;
+            let target = edge.call_method1("__getitem__", (1, ))?.extract::<PyObject>()?;
+            let target = convert_to_string(&target)?;
+            let attrs = edge.call_method1("__getitem__", (2, ))?.extract::<HashMap<String, PyObject>>()?;
+            graph.add_edge(source, target, attrs);
+        }
         
-        // 获取节点及其属性
-        let nodes: Vec<(String, PyObject)> = nx_graph
-            .call_method0("nodes")?
-            .call_method1("items", ())?
-            .extract()?;
-
-        for (node_id, attrs) in nodes {
-            let attributes: HashMap<String, PyObject> = attrs.extract(py)?;
-            graph.add_node(node_id.clone(), attributes);
-        }
-
-        // 获取边及其属性
-        let edges: Vec<(String, String, PyObject)> = nx_graph
-            .call_method0("edges")?
-            .call_method1("data", ())?
-            .extract()?;
-
-        for (source, target, attrs) in edges {
-            let attributes: HashMap<String, PyObject> = attrs.extract(py)?;
-            graph.add_edge(source, target, attributes);
-        }
-
         Ok(graph)
     }
 
     // 转回NetworkX图的方法
     fn to_networkx(&self, py: Python) -> PyResult<PyObject> {
         let nx = py.import("networkx")?;
-        let graph = nx.call_method0("Graph")?;
+        let graph = nx.getattr("Graph")?.call0()?;
 
         // 添加节点
         for node in &self.nodes {
+            let attrs_dict = PyDict::new(py);
+            for (k, v) in &node.attributes.0 {
+                attrs_dict.set_item(k, v.clone_ref(py))?;
+            }
             graph.call_method1(
                 "add_node",
-                (node.id.clone(), node.attributes.0.clone()),
+                (node.id.clone(), attrs_dict),
             )?;
         }
 
         // 添加边
         for edge in &self.edges {
+            let attrs_dict = PyDict::new(py);
+            for (k, v) in &edge.attributes.0 {
+                attrs_dict.set_item(k, v.clone_ref(py))?;
+            }
             graph.call_method1(
                 "add_edge",
                 (
                     edge.source.clone(),
                     edge.target.clone(),
-                    edge.attributes.0.clone(),
+                    attrs_dict,
                 ),
             )?;
         }
@@ -196,7 +247,11 @@ impl NetworkXGraph {
     // 获取节点属性
     fn get_node_attributes(&self, node_id: &str) -> Option<HashMap<String, PyObject>> {
         self.node_indices.get(node_id).map(|&index| {
-            self.nodes[index].attributes.0.clone()
+            Python::with_gil(|py| {
+                self.nodes[index].attributes.0.iter()
+                    .map(|(k, v)| (k.clone(), v.clone_ref(py)))
+                    .collect()
+            })
         })
     }
 
@@ -210,7 +265,11 @@ impl NetworkXGraph {
             .iter()
             .find(|e| e.source == *self.node_indices.get(source).unwrap() 
                             && e.target == *self.node_indices.get(target).unwrap())
-            .map(|e| e.attributes.0.clone())
+            .map(|e| Python::with_gil(|py| {
+                e.attributes.0.iter()
+                    .map(|(k, v)| (k.clone(), v.clone_ref(py)))
+                    .collect()
+            }))
     }
 }
 
@@ -219,15 +278,15 @@ impl<'a> Graph<'a> for NetworkXGraph {
 
     type Edge = Edge;
 
-    fn nodes(&'a self) -> impl Iterator<Item = &Self::Node> {
+    fn nodes(&'a self) -> impl Iterator<Item = &'a Self::Node> {
         self.nodes.iter()
     }
 
-    fn edges(&'a self) -> impl Iterator<Item = &Self::Edge> {
+    fn edges(&'a self) -> impl Iterator<Item = &'a Self::Edge> {
         self.edges.iter()
     }
 
-    fn get_edges_pair(&'a self) -> impl Iterator<Item = (&Self::Node, &Self::Node)> {
+    fn get_edges_pair(&'a self) -> impl Iterator<Item = (&'a Self::Node, &'a Self::Node)> {
         let id_map: HashMap<_, _, std::collections::hash_map::RandomState> = HashMap::from_iter(self.nodes.iter().map(|node| (node.id, node)));
         self.edges.iter().map(|edge| (id_map.get(&edge.source).unwrap().clone(), id_map.get(&edge.target).unwrap().clone()) ).collect::<Vec<_>>().into_iter()
     }
@@ -243,14 +302,93 @@ impl<'a> Graph<'a> for NetworkXGraph {
     }
 }
 
+fn test_eq(a: &Py<PyAny>, b: &Py<PyAny>) -> bool {
+    Python::with_gil(|py| {
+        match a.call_method1(py, "__eq__", (b,)) {
+            Ok(result) => result.extract::<bool>(py).unwrap_or(false),
+            Err(_) => false
+        }
+    })
+}
+
+fn native_same_label_fn(a: &Attributes, b: &Attributes) -> bool {
+    for (k, v) in &a.0 {
+        if let Some(other_v) = b.0.get(k) {
+            if test_eq(v, other_v) {
+                continue;
+            }
+            // println!("{} != {}", v, other_v);
+        } else {
+            return false;
+        }
+    }
+    true
+}
+
 impl<'a> Labeled<'a> for NetworkXGraph {
     fn label_same(&self, node: &Self::Node, label: &Self::Node) -> bool {
-        self.same_label_fn.as_ref().map_or(node == label, |f| f(&node.attributes, &label.attributes))
+        self.same_label_fn.as_ref().map_or(native_same_label_fn(&node.attributes, &label.attributes), |f| f(&node.attributes, &label.attributes))
     }
 
     fn get_label(&'a self, node: &'a Self::Node) -> &'a impl Label {
         &node.attributes
     }
+}
+
+impl std::fmt::Display for NetworkXGraph {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "NetworkXGraph(\n")?;
+        write!(f, "Nodes: [\n")?;
+        for node in &self.nodes {
+            write!(f, "  {},\n", node)?;
+        }
+        write!(f, "],\n")?;
+        write!(f, "Edges: [\n")?;
+        for edge in &self.edges {
+            write!(f, "{} -> {}, ", edge.source, edge.target)?;
+        }
+        write!(f, "]\n")?;
+        write!(f, ")")
+    }
+}
+
+fn to_nx_node(py: Python, node: &Node) -> PyResult<PyObject> {
+    let attrs_dict = PyDict::new(py);
+    for (k, v) in &node.attributes.0 {
+        attrs_dict.set_item(k, v.clone_ref(py))?;
+    }
+    let nx = py.import("networkx")?;
+    let node = nx.getattr("Node")?.call1((node.id.clone(), attrs_dict))?;
+    Ok(node.into())
+}
+
+#[pyfunction]
+pub fn get_simulation_inter(nx_graph1: &Bound<'_, PyAny>, nx_graph2: &Bound<'_, PyAny>) -> PyResult<PyObject> {
+    let graph1 = NetworkXGraph::from_networkx(nx_graph1)?;
+    let graph2 = NetworkXGraph::from_networkx(nx_graph2)?;
+
+
+    let sim = graph1.get_simulation_inter(&graph2);
+
+    // Convert simulation to a list of pairs (i, j) where i is a node in graph1, j is a node in graph2
+    Python::with_gil(|py| {
+        let map = PyDict::new(py);
+        
+        for (node, set) in sim.iter() {
+            let py_set = PySet::new(py, set.iter().map(|node| to_nx_node(py, node)).collect::<PyResult<Vec<_>>>()?)?;
+            map.set_item(to_nx_node(py, node)?, py_set)?;
+        }
+    
+        Ok(map.into())
+    })
+}
+
+#[pyfunction]
+pub fn is_simulation_isomorphic(nx_graph1: &Bound<'_, PyAny>, nx_graph2: &Bound<'_, PyAny>) -> PyResult<bool> {
+    let graph1 = NetworkXGraph::from_networkx(nx_graph1)?;
+    // println!("{}", graph1);
+    let graph2 = NetworkXGraph::from_networkx(nx_graph2)?;
+    Ok(NetworkXGraph::has_simulation(graph1.get_simulation_inter(&graph2)))
 }
 
 impl Directed for NetworkXGraph {}
