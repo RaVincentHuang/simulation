@@ -2,8 +2,8 @@ use graph_simulation::algorithm::simulation::Simulation;
 use graph_simulation::graph::base::Graph;
 use pyo3::types::PySet;
 use pyo3::{prelude::*, types::PyDict};
-use graph_simulation::graph::labeled_graph::{Label, Labeled};
-use graph_simulation::graph::base::{Directed, Adjacency, AdjacencyInv};
+use graph_simulation::graph::labeled_graph::{Label, Labeled, LabeledAdjacency};
+use graph_simulation::graph::base::{Directed, Adjacency, AdjacencyInv, SingleId, IdPair};
 
 
 use pyo3::prelude::*;
@@ -95,7 +95,11 @@ impl Hash for Attributes {
     }
 }
 
-impl Label for Attributes {}
+impl Label for Attributes {
+    fn label(&self) -> &str {
+        ""
+    }
+}
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Node {
@@ -109,11 +113,23 @@ impl std::fmt::Display for Node {
     }
 }
 
+impl SingleId for Node {
+    fn id(&self) -> usize {
+        self.id
+    }
+}
+
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Edge {
     source: usize,
     target: usize,
     attributes: Attributes,
+}
+
+impl IdPair for Edge {
+    fn pair(&self) -> (usize, usize) {
+        (self.source, self.target)
+    }
 }
 
 #[pyclass]
@@ -122,6 +138,8 @@ pub struct NetworkXGraph {
     edges: Vec<Edge>,
     node_indices: HashMap<String, usize>,
     same_label_fn: Option<Py<PyAny>>,
+    same_edge_fn: Option<Py<PyAny>>,
+    same_node_edge_fn: Option<Py<PyAny>>,
     same_label_cache: Option<HashSet<(usize, usize)>>
 }
 
@@ -133,6 +151,8 @@ impl Clone for NetworkXGraph {
                 edges: self.edges.clone(),
                 node_indices: self.node_indices.clone(),
                 same_label_fn: self.same_label_fn.as_ref().map(|f| f.clone_ref(py)),
+                same_edge_fn: self.same_edge_fn.as_ref().map(|f| f.clone_ref(py)),
+                same_node_edge_fn: self.same_node_edge_fn.as_ref().map(|f| f.clone_ref(py)),
                 same_label_cache: self.same_label_cache.clone(),
             }
         })
@@ -159,6 +179,8 @@ impl NetworkXGraph {
             edges: Vec::new(),
             node_indices: HashMap::new(),
             same_label_fn: None,
+            same_edge_fn: None,
+            same_node_edge_fn: None, 
             same_label_cache: None,
         }
     }
@@ -291,6 +313,14 @@ impl NetworkXGraph {
         self.same_label_fn = Some(compare);
     }
 
+    fn register_edge_compare_fn(&mut self, compare: Py<PyAny>) {
+        self.same_edge_fn = Some(compare);
+    }
+
+    fn register_node_edge_compare_fn(&mut self, compare: Py<PyAny>) {
+        self.same_node_edge_fn = Some(compare);
+    }
+
     fn build_compare_cache(&mut self, other: &NetworkXGraph) {
         // use rayon::prelude::*;
         // let cache: HashSet<_> = self.nodes.par_iter().flat_map(|node1| {
@@ -390,7 +420,44 @@ impl<'a> Labeled<'a> for NetworkXGraph {
     fn get_label(&'a self, node: &'a Self::Node) -> &'a impl Label {
         &node.attributes
     }
+
+    fn get_edges_pair_label(&'a self) -> impl Iterator<Item = (&'a Self::Node, &'a Self::Node, &'a impl Label)> {
+        let id_map: HashMap<_, _, std::collections::hash_map::RandomState> = HashMap::from_iter(self.nodes.iter().map(|node| (node.id, node)));
+        self.edges.iter().map(move |edge| (id_map.get(&edge.source).unwrap().clone(), id_map.get(&edge.target).unwrap().clone(), &edge.attributes)).collect::<Vec<_>>().into_iter()
+    }
+
+    fn edge_label_same(&self, edge1: &Self::Edge, edge2: &Self::Edge) -> bool {
+        if let Some(compare_fn) = self.same_edge_fn.as_ref() {
+            Python::with_gil(|py| {
+                let attr1 = edge1.attributes.0.iter().map(|(k, v)| (k.clone(), v.clone_ref(py))).collect::<HashMap<_, _>>();
+                let attr2 = edge2.attributes.0.iter().map(|(k, v)| (k.clone(), v.clone_ref(py))).collect::<HashMap<_, _>>();
+                compare_fn.call1(py,(attr1, attr2)).unwrap().extract::<bool>(py).unwrap()
+            })
+        } else {
+            native_same_label_fn(&edge1.attributes, &edge2.attributes)
+        }
+    }
+
+    fn edge_node_label_same(&self, src1: &Self::Node, edge1: &Self::Edge, dst1: &Self::Node, src2: &Self::Node, edge2: &Self::Edge, dst2: &Self::Node) -> bool {
+        if let Some(compare_fn) = self.same_node_edge_fn.as_ref() {
+            Python::with_gil(|py| {
+                let src1_attr = src1.attributes.0.iter().map(|(k, v)| (k.clone(), v.clone_ref(py))).collect::<HashMap<_, _>>();
+                let dst1_attr = dst1.attributes.0.iter().map(|(k, v)| (k.clone(), v.clone_ref(py))).collect::<HashMap<_, _>>();
+                let edge1_attr = edge1.attributes.0.iter().map(|(k, v)| (k.clone(), v.clone_ref(py))).collect::<HashMap<_, _>>();
+                let src2_attr = src2.attributes.0.iter().map(|(k, v)| (k.clone(), v.clone_ref(py))).collect::<HashMap<_, _>>();
+                let dst2_attr = dst2.attributes.0.iter().map(|(k, v)| (k.clone(), v.clone_ref(py))).collect::<HashMap<_, _>>();
+                let edge2_attr = edge2.attributes.0.iter().map(|(k, v)| (k.clone(), v.clone_ref(py))).collect::<HashMap<_, _>>();
+                compare_fn.call1(py,(src1_attr, edge1_attr, dst1_attr, src2_attr, edge2_attr, dst2_attr)).unwrap().extract::<bool>(py).unwrap()
+            })
+        } else {
+            native_same_label_fn(&src1.attributes, &src2.attributes) 
+                && native_same_label_fn(&dst1.attributes, &dst2.attributes) 
+                && native_same_label_fn(&edge1.attributes, &edge2.attributes)
+        }
+    }
 }
+
+impl LabeledAdjacency<'_> for NetworkXGraph {}
 
 impl std::fmt::Display for NetworkXGraph {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -497,6 +564,37 @@ pub fn is_simulation_isomorphic_fn(nx_graph1: &Bound<'_, PyAny>, nx_graph2: &Bou
     }
 
     Ok(NetworkXGraph::has_simulation(graph1.get_simulation_inter(&graph2)))
+}
+
+#[pyfunction]
+#[pyo3(signature = (nx_graph1, nx_graph2, node_compare, edge_compare, is_label_cached = false))]
+pub fn is_simulation_isomorphic_of_node_edge_fn(nx_graph1: &Bound<'_, PyAny>, nx_graph2: &Bound<'_, PyAny>, node_compare: Py<PyAny>, edge_compare: Py<PyAny>, is_label_cached: bool) -> PyResult<bool> {
+    let mut graph1 = NetworkXGraph::from_networkx(nx_graph1)?;
+    let graph2 = NetworkXGraph::from_networkx(nx_graph2)?;
+    
+    graph1.register_compare_fn(node_compare);
+    graph1.register_edge_compare_fn(edge_compare);
+
+    if is_label_cached {
+        graph1.build_compare_cache(&graph2);
+    }
+
+    Ok(NetworkXGraph::has_simulation(graph1.get_simulation_of_node_edge(&graph2)))
+}
+
+#[pyfunction]
+#[pyo3(signature = (nx_graph1, nx_graph2, node_edge_compare, is_label_cached = false))]
+pub fn is_simulation_isomorphic_of_edge_fn(nx_graph1: &Bound<'_, PyAny>, nx_graph2: &Bound<'_, PyAny>, node_edge_compare: Py<PyAny>, is_label_cached: bool) -> PyResult<bool> {
+    let mut graph1 = NetworkXGraph::from_networkx(nx_graph1)?;
+    let graph2 = NetworkXGraph::from_networkx(nx_graph2)?;
+    
+    graph1.register_node_edge_compare_fn(node_edge_compare);
+
+    if is_label_cached {
+        graph1.build_compare_cache(&graph2);
+    }
+
+    Ok(NetworkXGraph::has_simulation(graph1.get_simulation_of_edge(&graph2)))
 }
 
 impl Directed for NetworkXGraph {}

@@ -22,3 +22,13 @@ def is_simulation_isomorphic_fn(nx_graph1: networkx.DiGraph, nx_graph2: networkx
     """
     Check if two graphs are isomorphic by graph simulation.
     """
+
+def is_simulation_isomorphic_of_node_edge_fn(nx_graph1: networkx.DiGraph, nx_graph2: networkx.DiGraph, node_compare_fn: Callable,  edge_compare_fn: Callable, is_label_cached=False) -> bool:
+    """
+    Check if two graphs are isomorphic by graph simulation.
+    """
+
+def is_simulation_isomorphic_of_edge_fn(nx_graph1: networkx.DiGraph, nx_graph2: networkx.DiGraph, node_edge_compare_fn: Callable, is_label_cached=False) -> bool:
+    """
+    Check if two graphs are isomorphic by graph simulation.
+    """
