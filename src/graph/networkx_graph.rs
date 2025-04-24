@@ -1,9 +1,8 @@
 use graph_simulation::algorithm::simulation::Simulation;
 use pyo3::types::PySet;
 use pyo3::{prelude::*, types::PyDict};
-use graph_base::interfaces::labeled::{Label, Labeled};
+use graph_base::interfaces::labeled::{Label, Labeled, LabeledAdjacency};
 use graph_base::interfaces::graph::{Graph, Directed, Adjacency, AdjacencyInv, SingleId, IdPair};
-use graph_base::impls::standard::LabeledAdjacency;
 
 use pyo3::prelude::*;
 use std::collections::{HashMap, HashSet};

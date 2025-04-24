@@ -47,15 +47,15 @@ checksum = "b7914353092ddf589ad78f25c5c1c21b7f80b0ff8621e7c814c3485b5306da9d"
 
 [[package]]
 name = "graph-base"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7777a3065532c4fce8380d615aff34f1c4ffce0b706c96c070770490e0b55d2"
+checksum = "97818a84e65f02545f38aae643f16779e54c186b442f084f138c53e1c981e32c"
 
 [[package]]
 name = "graph-simulation"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60983cad70877e9014f41f9fc3d87a4c1940e16cb92f85904f0781bffb441674"
+checksum = "2b06d26f28d2b6d5504d69507ed5460c55a4368e66dcd767e7c8f189615c3643"
 dependencies = [
  "graph-base",
 ]
