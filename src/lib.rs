@@ -6,7 +6,11 @@ use pyo3::prelude::*;
 
 #[pymodule]
 fn simulation(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    graph::register_graph_module(m)?;
+    // graph::register_graph_module(m)?;
+    m.add_class::<graph::hypergraph::Hypergraph>()?;
+    m.add_class::<graph::hypergraph::Node>()?;
+    m.add_class::<graph::hypergraph::Hyperedge>()?;
+    m.add_class::<graph::hypergraph::LMatchImpl>()?;
     m.add_function(wrap_pyfunction!(graph::networkx_graph::get_simulation_inter, m)?)?;
     m.add_function(wrap_pyfunction!(graph::networkx_graph::get_simulation_inter_fn, m)?)?;
     m.add_function(wrap_pyfunction!(graph::networkx_graph::is_simulation_isomorphic, m)?)?;

@@ -1,5 +1,6 @@
 
 pub mod networkx_graph;
+pub mod hypergraph;
 
 use pyo3::prelude::*;
 

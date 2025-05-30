@@ -1,3 +1,4 @@
+use graph_base::interfaces::vertex::Vertex;
 use graph_simulation::algorithm::simulation::Simulation;
 use pyo3::types::PySet;
 use pyo3::{prelude::*, types::PyDict};
@@ -346,10 +347,24 @@ impl NetworkXGraph {
     }
 }
 
+impl Vertex for Node {}
+
 impl<'a> Graph<'a> for NetworkXGraph {
     type Node = Node;
 
     type Edge = Edge;
+
+    fn new() -> Self {
+        NetworkXGraph {
+            nodes: Vec::new(),
+            edges: Vec::new(),
+            node_indices: HashMap::new(),
+            same_label_fn: None,
+            same_edge_fn: None,
+            same_node_edge_fn: None,
+            same_label_cache: None,
+        }
+    }
 
     fn nodes(&'a self) -> impl Iterator<Item = &'a Self::Node> {
         self.nodes.iter()

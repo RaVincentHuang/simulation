@@ -14,8 +14,8 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.23", features = ["extension-module"] }
-graph-simulation = "0.1.2"
-graph-base = "0.1.2"
+graph-simulation = "0.1.11"
+graph-base = "0.1.13"
 rayon = "1.10.0"
 # [tool.maturin]
 # include-pyi = true  # 自动打包生成的 .pyi 文件
