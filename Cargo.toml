@@ -14,7 +14,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.23", features = ["extension-module"] }
-graph-simulation = "0.1.13"
+graph-simulation = "0.1.14"
 graph-base = "0.1.13"
 rayon = "1.10.0"
 # [tool.maturin]

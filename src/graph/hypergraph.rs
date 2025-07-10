@@ -134,6 +134,16 @@ impl Hypergraph {
             .map(|(k, v)| (k.id(), v.into_iter().map(|n| n.id()).collect()))
             .collect()
     }
+
+    #[staticmethod]
+    pub fn soft_hyper_simulation(query: PyRef<Hypergraph>, data: PyRef<Hypergraph>, l_match_fn: Py<PyAny>) -> HashMap<usize, HashSet<usize>> {
+        let mut l_match = LMatchImpl::from(l_match_fn);
+        let sim = HyperSimulation::get_soft_simulation_naive(&*query, &*data, &mut l_match);
+        // Convert HashMap<&Node, HashSet<&Node>> to HashMap<usize, HashSet<usize>>
+        sim.into_iter()
+            .map(|(k, v)| (k.id(), v.into_iter().map(|n| n.id()).collect()))
+            .collect()
+    }
 }
 
 impl Display for Node {

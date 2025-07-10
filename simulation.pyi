@@ -70,3 +70,9 @@ class Hypergraph:
         """
         Hyper simulation.
         """
+    
+    @staticmethod
+    def soft_hyper_simulation(query: 'Hypergraph', data: 'Hypergraph', l_match_fn: Callable[[Hyperedge, Hyperedge], dict[int, set[int]]]) -> dict[int, set[int]]:
+        """
+        Hyper simulation.
+        """
