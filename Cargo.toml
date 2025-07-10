@@ -1,6 +1,6 @@
 [package]
 name = "simulation"
-version = "0.1.0"
+version = "0.1.4"
 edition = "2021"
 license = "MIT"
 description = "A Python package for simulation algorithms"
@@ -14,7 +14,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.23", features = ["extension-module"] }
-graph-simulation = "0.1.11"
+graph-simulation = "0.1.13"
 graph-base = "0.1.13"
 rayon = "1.10.0"
 # [tool.maturin]

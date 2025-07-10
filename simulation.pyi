@@ -59,9 +59,9 @@ class Hypergraph:
     
     def add_hyperedge(self, hyperedge: Hyperedge): ...
     
-    def set_type_same_fn(self, type_same_fn: Callable[[str, str], bool]): ...
+    def set_type_same_fn(self, type_same_fn: Callable[[str, str], bool]): ... # L(v) = L(u)
     
-    def set_l_predicate_fn(self, l_predicate_fn: Callable[[Hyperedge, Hyperedge], bool]): ...
+    def set_l_predicate_fn(self, l_predicate_fn: Callable[[Hyperedge, Hyperedge], bool]): ... # L_P(e1, e2)
     
     def get_node_desc_by_id(self, node_id: int) -> Optional[str]: ...
     
@@ -70,6 +70,3 @@ class Hypergraph:
         """
         Hyper simulation.
         """
-    
-    
-    
