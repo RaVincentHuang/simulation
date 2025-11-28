@@ -8,10 +8,10 @@ use graph_base::interfaces::graph::{Graph, Directed, Adjacency, AdjacencyInv, Si
 use pyo3::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
-use std::path::Display;
-use std::sync::Arc;
+// use std::path::Display;
+// use std::sync::Arc;
 
-type SharedRustFn = Arc<dyn Fn(&Attributes, &Attributes) -> bool + Send + Sync>;
+// type SharedRustFn = Arc<dyn Fn(&Attributes, &Attributes) -> bool + Send + Sync>;
 
 
 // 自定义图结构
@@ -21,7 +21,7 @@ struct Attributes(HashMap<String, Py<PyAny>>);
 
 impl Clone for Attributes {
     fn clone(&self) -> Self {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let cloned_map = self.0.iter()
                 .map(|(k, v)| (k.clone(), v.clone_ref(py)))
                 .collect();
@@ -50,7 +50,7 @@ impl PartialEq for Attributes {
             return false;
         }
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             self.0.iter().all(|(key, value)| {
                 match other.0.get(key) {
                     Some(other_value) => {
@@ -74,7 +74,7 @@ impl Hash for Attributes {
         let mut entries: Vec<_> = self.0.iter().collect();
         entries.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             for (key, value) in entries {
                 key.hash(state);
                 // 使用 Python 对象的 __hash__ 方法
@@ -144,7 +144,7 @@ pub struct NetworkXGraph {
 
 impl Clone for NetworkXGraph {
     fn clone(&self) -> Self {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             NetworkXGraph {
                 nodes: self.nodes.clone(),
                 edges: self.edges.clone(),
@@ -158,8 +158,8 @@ impl Clone for NetworkXGraph {
     }
 }
 
-fn convert_to_string(obj: &PyObject) -> PyResult<String> {
-    Python::with_gil(|py| {
+fn convert_to_string(obj: &Py<PyAny>) -> PyResult<String> {
+    Python::attach(|py| {
         // Try direct conversion first
         obj.call_method0(py, "__str__")?.extract::<String>(py)
             .or_else(|_| {
@@ -391,7 +391,7 @@ impl<'a> Graph<'a> for NetworkXGraph {
 }
 
 fn test_eq(a: &Py<PyAny>, b: &Py<PyAny>) -> bool {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         match a.call_method1(py, "__eq__", (b,)) {
             Ok(result) => result.extract::<bool>(py).unwrap_or(false),
             Err(_) => false
@@ -420,7 +420,7 @@ impl<'a> Labeled<'a> for NetworkXGraph {
         }
 
         if let Some(compare_fn) = self.same_label_fn.as_ref() {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let attr1 = node.attributes.0.iter().map(|(k, v)| (k.clone(), v.clone_ref(py))).collect::<HashMap<_, _>>();
                 let attr2 = label.attributes.0.iter().map(|(k, v)| (k.clone(), v.clone_ref(py))).collect::<HashMap<_, _>>();
                 compare_fn.call1(py,(attr1, attr2)).unwrap().extract::<bool>(py).unwrap()
@@ -441,7 +441,7 @@ impl<'a> Labeled<'a> for NetworkXGraph {
 
     fn edge_label_same(&self, edge1: &Self::Edge, edge2: &Self::Edge) -> bool {
         if let Some(compare_fn) = self.same_edge_fn.as_ref() {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let attr1 = edge1.attributes.0.iter().map(|(k, v)| (k.clone(), v.clone_ref(py))).collect::<HashMap<_, _>>();
                 let attr2 = edge2.attributes.0.iter().map(|(k, v)| (k.clone(), v.clone_ref(py))).collect::<HashMap<_, _>>();
                 compare_fn.call1(py,(attr1, attr2)).unwrap().extract::<bool>(py).unwrap()
@@ -453,7 +453,7 @@ impl<'a> Labeled<'a> for NetworkXGraph {
 
     fn edge_node_label_same(&self, src1: &Self::Node, edge1: &Self::Edge, dst1: &Self::Node, src2: &Self::Node, edge2: &Self::Edge, dst2: &Self::Node) -> bool {
         if let Some(compare_fn) = self.same_node_edge_fn.as_ref() {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let src1_attr = src1.attributes.0.iter().map(|(k, v)| (k.clone(), v.clone_ref(py))).collect::<HashMap<_, _>>();
                 let dst1_attr = dst1.attributes.0.iter().map(|(k, v)| (k.clone(), v.clone_ref(py))).collect::<HashMap<_, _>>();
                 let edge1_attr = edge1.attributes.0.iter().map(|(k, v)| (k.clone(), v.clone_ref(py))).collect::<HashMap<_, _>>();
@@ -489,7 +489,7 @@ impl std::fmt::Display for NetworkXGraph {
     }
 }
 
-fn to_nx_node(py: Python, node: &Node) -> PyResult<PyObject> {
+fn to_nx_node(py: Python, node: &Node) -> PyResult<Py<PyAny>> {
     let attrs_dict = PyDict::new(py);
     for (k, v) in &node.attributes.0 {
         attrs_dict.set_item(k, v.clone_ref(py))?;
@@ -501,7 +501,7 @@ fn to_nx_node(py: Python, node: &Node) -> PyResult<PyObject> {
 
 #[pyfunction]
 #[pyo3(signature = (nx_graph1, nx_graph2, is_label_cached = false))]
-pub fn get_simulation_inter(nx_graph1: &Bound<'_, PyAny>, nx_graph2: &Bound<'_, PyAny>, is_label_cached: bool) -> PyResult<PyObject> {
+pub fn get_simulation_inter(nx_graph1: &Bound<'_, PyAny>, nx_graph2: &Bound<'_, PyAny>, is_label_cached: bool) -> PyResult<Py<PyAny>> {
     let mut graph1 = NetworkXGraph::from_networkx(nx_graph1)?;
     let graph2 = NetworkXGraph::from_networkx(nx_graph2)?;
 
@@ -513,7 +513,7 @@ pub fn get_simulation_inter(nx_graph1: &Bound<'_, PyAny>, nx_graph2: &Bound<'_, 
     
 
     // Convert simulation to a list of pairs (i, j) where i is a node in graph1, j is a node in graph2
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let map = PyDict::new(py);
         
         for (node, set) in sim.iter() {
@@ -540,7 +540,7 @@ pub fn is_simulation_isomorphic(nx_graph1: &Bound<'_, PyAny>, nx_graph2: &Bound<
 
 #[pyfunction]
 #[pyo3(signature = (nx_graph1, nx_graph2, compare, is_label_cached = false))]
-pub fn get_simulation_inter_fn(nx_graph1: &Bound<'_, PyAny>, nx_graph2: &Bound<'_, PyAny>, compare: Py<PyAny>, is_label_cached: bool) -> PyResult<PyObject> {
+pub fn get_simulation_inter_fn(nx_graph1: &Bound<'_, PyAny>, nx_graph2: &Bound<'_, PyAny>, compare: Py<PyAny>, is_label_cached: bool) -> PyResult<Py<PyAny>> {
     let mut graph1 = NetworkXGraph::from_networkx(nx_graph1)?;
     let graph2 = NetworkXGraph::from_networkx(nx_graph2)?;
 
@@ -552,7 +552,7 @@ pub fn get_simulation_inter_fn(nx_graph1: &Bound<'_, PyAny>, nx_graph2: &Bound<'
 
     let sim = graph1.get_simulation_inter(&graph2);
 
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let map = PyDict::new(py);
         
         for (node, set) in sim.iter() {

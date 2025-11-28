@@ -1,7 +1,7 @@
 use std::{collections::{HashMap, HashSet}, fmt::Display, hash::Hash};
 
-use pyo3::prelude::*;
-use graph_simulation::algorithm::hyper_simulation::{HyperSimulation, LMatch, LPredicate};
+use pyo3::{prelude::*, types::PyList};
+use graph_simulation::algorithm::hyper_simulation::{DMatch, Delta, HyperSimulation, LMatch, LPredicate, SematicCluster};
 use graph_base::interfaces::{edge, graph::{self, SingleId}, hypergraph::{self, ContainedHyperedge}, typed, vertex};
 // use graph_base::interfaces::hypergraph;
 
@@ -144,6 +144,15 @@ impl Hypergraph {
             .map(|(k, v)| (k.id(), v.into_iter().map(|n| n.id()).collect()))
             .collect()
     }
+
+    #[staticmethod]
+    pub fn get_hyper_simulation(query: PyRef<Hypergraph>, data: PyRef<Hypergraph>, delta: PyRef<DeltaPy>, d_match: PyRef<DMatchImpl>) -> HashMap<usize, HashSet<usize>> {
+        let delta_inner = DeltaImpl::from(delta.clone(), &*query, &*data);
+        let sim = HyperSimulation::get_hyper_simulation_naive(&*query, &*data, &delta_inner, &*d_match);
+        sim.into_iter()
+            .map(|(k, v)| (k.id(), v.into_iter().map(|n| n.id()).collect()))
+            .collect()
+    }
 }
 
 impl Display for Node {
@@ -216,8 +225,8 @@ impl<'a> typed::Typed<'a> for Hypergraph {
             // You cannot pass Rust trait objects directly to Python.
             // Instead, you need to define what data you want to compare and pass only that.
             // For example, if your Type trait has an id() method, you could do:
-            Python::with_gil(|py| {
-                type_same_fn.call1(py, (&x.desc, &y.desc)).map_or(false, |result| {
+            Python::attach(|py| {
+                type_same_fn.call1(py, (&x.id, &y.id)).map_or(false, |result| {
                     result.extract::<bool>(py).unwrap_or(false)
                 })
             })
@@ -228,6 +237,8 @@ impl<'a> typed::Typed<'a> for Hypergraph {
 }
 
 impl<'a> ContainedHyperedge<'a> for Hypergraph {}
+
+
 
 #[pyclass(name = "LMatch")]
 pub struct LMatchImpl {
@@ -275,7 +286,7 @@ impl LMatch for LMatchImpl {
     fn l_match_with_node_mut(&mut self, e: &Self::Edge, e_prime: &Self::Edge, u: usize) -> &HashSet<usize> {
         let l_match = self.l_match_cache.entry((e.id, e_prime.id)).or_insert_with(|| {
             if let Some(l_match_fn) = self.l_match_fn.as_ref() {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 l_match_fn.call1(py, (e.clone(), e_prime.clone())).map_or_else(
                     |_| HashMap::new(),
                     |result| result.extract::<HashMap<usize, HashSet<usize>>>(py).unwrap_or_default(),
@@ -315,7 +326,7 @@ impl<'a> LPredicate<'a> for Hypergraph {
 
     fn l_predicate_edge(&'a self, e: &'a Self::Edge, e_prime: &'a Self::Edge) -> bool {
         if let Some(l_predicate_fn) = self.l_predicate_fn.as_ref() {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 l_predicate_fn.call1(py, (e.clone(), e_prime.clone())).map_or(false, |result| {
                     result.extract::<bool>(py).unwrap_or(false)
                 })
@@ -328,6 +339,123 @@ impl<'a> LPredicate<'a> for Hypergraph {
     fn l_predicate_set(&'a self, x: &HashSet<&'a Self::Node>, y: &HashSet<&'a Self::Node>) -> bool {
         // Implement your logic here
         true
+    }
+}
+
+#[pyclass(name = "DMatch")]
+pub struct DMatchImpl {
+    d_match_cache: HashMap<(usize, usize), HashSet<(usize, usize)>>,
+}
+
+impl<'a> DMatch<'a> for DMatchImpl {
+    type Edge = Hyperedge;
+
+    fn d_match(&self, e: &SematicCluster<'a, Self::Edge>, e_prime: &SematicCluster<'a, Self::Edge>) -> &HashSet<(usize, usize)> {
+        if let Some(set) = self.d_match_cache.get(&(e.id(), e_prime.id())) {
+            return set;
+        }
+        unreachable!("D-Match not exist at ({}, {})", e.id(), e_prime.id())
+    }
+
+    // fn d_match_mut(&mut self, e: &SematicCluster<'a, Self::Edge>, e_prime: &SematicCluster<'a, Self::Edge>) -> &HashSet<(usize, usize)> {
+    //     todo!()
+    // }
+}
+
+
+
+#[pymethods]
+impl DMatchImpl {
+    #[new]
+    fn new() -> Self {
+        DMatchImpl {
+            d_match_cache: HashMap::new()
+        }
+    }
+
+    #[staticmethod]
+    fn from_dict(d_match_by_sc_id: HashMap<(usize, usize), HashSet<(usize, usize)>>) -> Self {
+        DMatchImpl {
+            d_match_cache: d_match_by_sc_id
+        }
+    }
+}
+
+// #[pyclass(name = "Delta")]
+struct DeltaImpl<'a> {
+    sematic_cluster: HashMap<(&'a Node, &'a Node), Vec<(SematicCluster<'a, Hyperedge>, SematicCluster<'a, Hyperedge>)>>
+}
+
+impl<'a> Delta<'a> for DeltaImpl<'a> {
+    type Edge = Hyperedge;
+    type Node = Node;
+
+    fn get_sematic_clusters(&'a self, u: &'a Self::Node, v: &'a Self::Node) -> &'a Vec<(SematicCluster<'a, Self::Edge>, SematicCluster<'a, Self::Edge>)> {
+        if let Some(pairs) = self.sematic_cluster.get(&(u, v)) {
+            return pairs;
+        }
+        unreachable!("Have no sematic_clusters between {} to {}", u, v)
+    }
+}
+
+impl<'a> DeltaImpl<'a> {
+    fn from(delta: DeltaPy, query: &'a Hypergraph, data: &'a Hypergraph) -> Self {
+        let mut pair_map: HashMap<(&Node, &Node), Vec<(SematicCluster<'a, Hyperedge>, SematicCluster<'a, Hyperedge>)>> = HashMap::new();
+        for ((u_id, v_id), pairs) in delta.sematic_cluster_cache {
+            let u = query.nodes.get(u_id).unwrap();
+            let v = data.nodes.get(v_id).unwrap();
+            for ((q_edges_ids, q_id), (d_edges_ids, d_id)) in pairs {
+                let q_edges: Vec<&Hyperedge> = q_edges_ids.iter().map(|id| {
+                    query.hyperedges.get(*id).unwrap()
+                }).collect();
+                let d_edges: Vec<&Hyperedge> = d_edges_ids.iter().map(|id| {
+                    data.hyperedges.get(*id).unwrap()
+                }).collect();
+
+                let sc_q = SematicCluster::new(q_id, q_edges);
+                let sc_d = SematicCluster::new(d_id, d_edges);
+
+                pair_map.entry((u, v)).or_default().push((sc_q, sc_d));
+            }
+        } 
+        let res = DeltaImpl {
+            sematic_cluster: pair_map
+        };
+
+        return res;
+    }
+
+
+}
+
+#[derive(Clone)]
+#[pyclass(name = "Delta")]
+pub struct DeltaPy {
+    sematic_cluster_cache: HashMap<(usize, usize), Vec<((Vec<usize>, usize), (Vec<usize>, usize))>>,
+    global_cnt: usize
+}
+
+#[pymethods]
+impl DeltaPy {
+    #[new]
+    fn new() -> Self {
+        DeltaPy {
+            sematic_cluster_cache: HashMap::new(),
+            global_cnt: 0
+        }
+    }
+
+    fn add_sematic_cluster_pair(&mut self, u: PyRef<Node>, v: PyRef<Node>, cluster_u: Vec<PyRef<Hyperedge>>, cluster_v: Vec<PyRef<Hyperedge>>) -> usize {
+        let id = self.global_cnt;
+        self.global_cnt += 1;
+        let u_ids: Vec<_> = cluster_u.iter().map(|e_ref| {
+            e_ref.id
+        }).collect();
+        let v_ids: Vec<_> = cluster_v.iter().map(|e_ref| {
+            e_ref.id
+        }).collect();
+        self.sematic_cluster_cache.entry((u.id, v.id)).or_default().push(((u_ids, id), (v_ids, id)));
+        return id;
     }
 }
 

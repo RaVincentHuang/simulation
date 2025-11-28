@@ -48,6 +48,19 @@ class Hyperedge:
     def __init__(self, id_set: set[int], desc: str, id: int): ...
     def id_set(self) -> set[int]: ...
     def desc(self) -> str: ...
+    
+
+class DMatch:
+    """
+    D-Match for hyper simulation 
+    """
+    def __init__(self) -> None: ...
+    @staticmethod
+    def from_dict(d_match_by_sc_id: dict[tuple[int, int], set[tuple[int, int]]]) -> 'DMatch': ...
+
+class Delta:
+    def __init__(self) -> None: ...
+    def add_sematic_cluster_pair(self, u: Node, v: Node, cluster_u: list[Hyperedge], cluster_v: list[Hyperedge]) -> int: ...
 
 class Hypergraph:
     """
@@ -74,5 +87,11 @@ class Hypergraph:
     @staticmethod
     def soft_hyper_simulation(query: 'Hypergraph', data: 'Hypergraph', l_match_fn: Callable[[Hyperedge, Hyperedge], dict[int, set[int]]]) -> dict[int, set[int]]:
         """
-        Hyper simulation.
+        Soft hyper simulation.
+        """
+        
+    @staticmethod
+    def get_hyper_simulation(query: 'Hypergraph', data: 'Hypergraph', delta: Delta, d_match: DMatch) -> dict[int, set[int]]:
+        """
+        Hyper Simulation
         """
