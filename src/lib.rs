@@ -11,6 +11,9 @@ fn simulation(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<graph::hypergraph::Node>()?;
     m.add_class::<graph::hypergraph::Hyperedge>()?;
     m.add_class::<graph::hypergraph::LMatchImpl>()?;
+    m.add_class::<graph::hypergraph::DeltaPy>()?;
+    m.add_class::<graph::hypergraph::DMatchImpl>()?;
+
     m.add_function(wrap_pyfunction!(graph::networkx_graph::get_simulation_inter, m)?)?;
     m.add_function(wrap_pyfunction!(graph::networkx_graph::get_simulation_inter_fn, m)?)?;
     m.add_function(wrap_pyfunction!(graph::networkx_graph::is_simulation_isomorphic, m)?)?;

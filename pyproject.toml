@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "simulation-alg"
-version = "0.1.7"
+version = "0.1.8"
 requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Rust",
