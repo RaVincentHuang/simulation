@@ -50,6 +50,7 @@ class Hyperedge:
     def desc(self) -> str: ...
     
 
+# (cluster_u, cluster_v)
 class DMatch:
     """
     D-Match for hyper simulation 
@@ -57,10 +58,20 @@ class DMatch:
     def __init__(self) -> None: ...
     @staticmethod
     def from_dict(d_match_by_sc_id: dict[tuple[int, int], set[tuple[int, int]]]) -> 'DMatch': ...
+    """
+    Register the d-match by sematic cluster's id, from `add_sematic_cluster_pair`.
+    For a sematic cluster pair by `id`, we set map[(id, id)] = R as the relation, where (u_id, v_id) in R, are node's id.
+    """
 
-class Delta:
+class Delta: # Delta(u, v) 
     def __init__(self) -> None: ...
     def add_sematic_cluster_pair(self, u: Node, v: Node, cluster_u: list[Hyperedge], cluster_v: list[Hyperedge]) -> int: ...
+    """
+    Add a sematic of (u, v), register a id of the pair that, (cluster_u, id) and (cluster_v, id) 
+    """
+
+# (u, v) (cluster_u, cluster_v)
+# (u', v') 
 
 class Hypergraph:
     """
@@ -72,7 +83,10 @@ class Hypergraph:
     
     def add_hyperedge(self, hyperedge: Hyperedge): ...
     
-    def set_type_same_fn(self, type_same_fn: Callable[[str, str], bool]): ... # L(v) = L(u)
+    def set_type_same_fn(self, type_same_fn: Callable[[int, int], bool]): ... # L(v) = L(u)
+    """
+    Set a function as the Denial Comment, where inputs the id of the nodes, and return if is conflict.
+    """
     
     def set_l_predicate_fn(self, l_predicate_fn: Callable[[Hyperedge, Hyperedge], bool]): ... # L_P(e1, e2)
     

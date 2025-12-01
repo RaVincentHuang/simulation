@@ -20,11 +20,11 @@ def l_match_fn(hyperedge1: Hyperedge, hyperedge2: Hyperedge) -> dict[int, set[in
                 mapping[id1] = {id2}
     return mapping
 
-def label_same_fn(desc1: str, desc2: str) -> bool:
+def label_same_fn(id1: int, id2: int) -> bool:
     """
     Check if two nodes are the same based on their descriptions.
     """
-    return desc1 == desc2 
+    return id1 == id2 
 
 if __name__ == "__main__":
     # Create a hypergraph

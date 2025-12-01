@@ -543,7 +543,7 @@ dependencies = [
 
 [[package]]
 name = "simulation"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "graph-base",
  "graph-simulation",
