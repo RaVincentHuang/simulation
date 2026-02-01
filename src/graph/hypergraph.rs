@@ -1,8 +1,9 @@
 use std::{collections::{HashMap, HashSet}, fmt::Display, hash::Hash};
 
 use pyo3::{prelude::*, types::PyList};
-use graph_simulation::algorithm::hyper_simulation::{DMatch, Delta, HyperSimulation, LMatch, LPredicate, SematicCluster};
+use graph_simulation::{algorithm::hyper_simulation::{DMatch, Delta, HSEvent, HyperSimulation, HyperSimulationTrace, LMatch, LPredicate, SematicCluster}, utils::logger::TraceLog};
 use graph_base::interfaces::{edge, graph::{self, SingleId}, hypergraph::{self, ContainedHyperedge}, typed, vertex};
+
 // use graph_base::interfaces::hypergraph;
 
 #[derive(Clone, Debug, Eq)]
@@ -86,6 +87,25 @@ pub struct Hypergraph {
     l_predicate_fn: Option<Py<PyAny>>, // (Hyperedge, Hyperedge) -> bool
 }
 
+#[pyclass(name = "Event")]
+pub struct Event {
+    pub phrase: String,
+    pub sc_id: usize,
+    pub binary_relation: HashSet<(usize, usize)>
+}
+
+#[pymethods]
+impl Event {
+    #[new]
+    pub fn new(phrase: String, sc_id: usize, binary_relation: HashSet<(usize, usize)>) -> Self {
+        Event {
+            phrase,
+            sc_id,
+            binary_relation,
+        }
+    }
+}
+
 #[pymethods]
 impl Hypergraph {
     #[new]
@@ -152,6 +172,25 @@ impl Hypergraph {
         sim.into_iter()
             .map(|(k, v)| (k.id(), v.into_iter().map(|n| n.id()).collect()))
             .collect()
+    }
+
+    pub fn get_hyper_simulation_trace(&self) -> Vec<Event> {
+        let trace = HyperSimulationTrace::get_trace("hyper_simulation.trace").unwrap();
+        let events = trace.into_iter().map(|event| {
+            match event {
+                HSEvent::Base(sc_id, relation) => Event {
+                    phrase: "base".to_string(),
+                    sc_id,
+                    binary_relation: relation
+                },
+                HSEvent::Derivation(sc_id, relation) => Event {
+                    phrase: "derivation".to_string(),
+                    sc_id,
+                    binary_relation: relation
+                }
+            }
+        }).collect();
+        events
     }
 }
 
@@ -381,9 +420,8 @@ impl DMatchImpl {
     }
 }
 
-// #[pyclass(name = "Delta")]
 struct DeltaImpl<'a> {
-    sematic_cluster: HashMap<(&'a Node, &'a Node), Vec<(SematicCluster<'a, Hyperedge>, SematicCluster<'a, Hyperedge>)>>
+    sematic_cluster: HashMap<(&'a Node, &'a Node), Vec<(SematicCluster<'a, Hyperedge>, SematicCluster<'a, Hyperedge>)>>,
 }
 
 impl<'a> Delta<'a> for DeltaImpl<'a> {
@@ -414,12 +452,16 @@ impl<'a> DeltaImpl<'a> {
 
                 let sc_q = SematicCluster::new(q_id, q_edges);
                 let sc_d = SematicCluster::new(d_id, d_edges);
+                // Update sematic_cluster_cache
 
+                // sematic_cluster_cache.insert((&sc_q, &sc_d), q_id);
+                
                 pair_map.entry((u, v)).or_default().push((sc_q, sc_d));
             }
         } 
+
         let res = DeltaImpl {
-            sematic_cluster: pair_map
+            sematic_cluster: pair_map,
         };
 
         return res;
@@ -431,7 +473,7 @@ impl<'a> DeltaImpl<'a> {
 #[derive(Clone)]
 #[pyclass(name = "Delta")]
 pub struct DeltaPy {
-    sematic_cluster_cache: HashMap<(usize, usize), Vec<((Vec<usize>, usize), (Vec<usize>, usize))>>,
+    sematic_cluster_cache: HashMap<(usize, usize), Vec<((Vec<usize>, usize), (Vec<usize>, usize))>>, // (u_id, v_id) -> Vec<((q_edge_ids, sc_id), (d_edge_ids, sc_id))>
     global_cnt: usize
 }
 

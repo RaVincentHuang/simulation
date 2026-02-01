@@ -49,6 +49,15 @@ class Hyperedge:
     def id_set(self) -> set[int]: ...
     def desc(self) -> str: ...
     
+class Event:
+    """
+    Event class.
+    """
+    phrase: str
+    sc_id: int
+    binary_relation: set[tuple[int, int]]
+    
+    def __init__(self, phrase: str, sc_id: int, binary_relation: set[tuple[int, int]]): ...
 
 # (cluster_u, cluster_v)
 class DMatch:
@@ -92,6 +101,11 @@ class Hypergraph:
     
     def get_node_desc_by_id(self, node_id: int) -> Optional[str]: ...
     
+    def get_hyper_simulation_trace(self) -> list[Event]: 
+        """
+        Get trace events of last time hyper simulation.
+        """
+    
     @staticmethod
     def hyper_simulation(query: 'Hypergraph', data: 'Hypergraph', l_match_fn: Callable[[Hyperedge, Hyperedge], dict[int, set[int]]]) -> dict[int, set[int]]:
         """
@@ -109,3 +123,4 @@ class Hypergraph:
         """
         Hyper Simulation
         """
+
