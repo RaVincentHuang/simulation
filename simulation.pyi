@@ -33,6 +33,16 @@ def is_simulation_isomorphic_of_edge_fn(nx_graph1: networkx.DiGraph, nx_graph2: 
     Check if two graphs are isomorphic by graph simulation.
     """
 
+def get_bounded_simulation(nx_graph1: networkx.DiGraph, nx_graph2: networkx.DiGraph, compare: Callable, bound: Callable, is_label_cached=False) -> Dict:
+    """
+    Get the bounded simulation between two graphs.
+    
+    The compare function should take two node attribute dictionaries and return True if they have the same label.
+    The bound function should take a node attribute dictionary and return an integer representing the bound value for that node.
+    
+    Returns a dictionary mapping nodes from nx_graph1 to sets of nodes from nx_graph2 that satisfy the bounded simulation.
+    """
+
 class Node:
     """
     Node for hypergraph.
@@ -122,5 +132,11 @@ class Hypergraph:
     def get_hyper_simulation(query: 'Hypergraph', data: 'Hypergraph', delta: Delta, d_match: DMatch) -> dict[int, set[int]]:
         """
         Hyper Simulation
+        """
+        
+    @staticmethod
+    def get_hyper_simulation_strict(query: 'Hypergraph', data: 'Hypergraph', delta: Delta, d_match: DMatch) -> dict[int, set[int]]:
+        """
+        Strict Hyper Simulation
         """
 

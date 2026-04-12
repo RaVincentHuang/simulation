@@ -1,9 +1,10 @@
 use graph_base::interfaces::vertex::Vertex;
 use graph_simulation::algorithm::simulation::Simulation;
+use graph_simulation::algorithm::bounded::{BoundedSimulation, Bounded};
 use pyo3::types::PySet;
 use pyo3::{prelude::*, types::PyDict};
 use graph_base::interfaces::labeled::{Label, Labeled, LabeledAdjacency};
-use graph_base::interfaces::graph::{Graph, Directed, Adjacency, AdjacencyInv, SingleId, IdPair};
+use graph_base::interfaces::graph::{Graph, Directed, Adjacency, AdjacencyInv, SingleId, IdPair, Degree, DegreeList};
 
 use pyo3::prelude::*;
 use std::collections::{HashMap, HashSet};
@@ -139,7 +140,8 @@ pub struct NetworkXGraph {
     same_label_fn: Option<Py<PyAny>>,
     same_edge_fn: Option<Py<PyAny>>,
     same_node_edge_fn: Option<Py<PyAny>>,
-    same_label_cache: Option<HashSet<(usize, usize)>>
+    same_label_cache: Option<HashSet<(usize, usize)>>,
+    bound_values: HashMap<usize, usize>,  // 节点 ID 到 bound 值的映射
 }
 
 impl Clone for NetworkXGraph {
@@ -153,6 +155,7 @@ impl Clone for NetworkXGraph {
                 same_edge_fn: self.same_edge_fn.as_ref().map(|f| f.clone_ref(py)),
                 same_node_edge_fn: self.same_node_edge_fn.as_ref().map(|f| f.clone_ref(py)),
                 same_label_cache: self.same_label_cache.clone(),
+                bound_values: self.bound_values.clone(),
             }
         })
     }
@@ -181,6 +184,7 @@ impl NetworkXGraph {
             same_edge_fn: None,
             same_node_edge_fn: None, 
             same_label_cache: None,
+            bound_values: HashMap::new(),
         }
     }
 
@@ -321,17 +325,6 @@ impl NetworkXGraph {
     }
 
     fn build_compare_cache(&mut self, other: &NetworkXGraph) {
-        // use rayon::prelude::*;
-        // let cache: HashSet<_> = self.nodes.par_iter().flat_map(|node1| {
-        //     let local: HashSet<_> = other.nodes.par_iter().filter_map(|node2| {
-        //         if self.label_same(node1, node2) {
-        //             Some((node1.id, node2.id))
-        //         } else {
-        //             None
-        //         }
-        //     }).collect();
-        //     local
-        // }).collect();
 
         let cache: HashSet<_> = self.nodes.iter().flat_map(|node1| {
             other.nodes.iter().filter_map(|node2| {
@@ -344,6 +337,22 @@ impl NetworkXGraph {
         }).collect();
 
         self.same_label_cache = Some(cache);
+    }
+
+    fn set_bound_values(&mut self, bound_fn: Py<PyAny>) {
+        // 使用 bound 函数为每个节点设置 bound 值
+        for node in &self.nodes {
+            let bound_value = Python::attach(|py| {
+                let node_attrs = node.attributes.0.iter()
+                    .map(|(k, v)| (k.clone(), v.clone_ref(py)))
+                    .collect::<HashMap<_, _>>();
+                bound_fn.call1(py, (node_attrs,))
+                    .ok()
+                    .and_then(|result| result.extract::<usize>(py).ok())
+                    .unwrap_or(0)
+            });
+            self.bound_values.insert(node.id, bound_value);
+        }
     }
 }
 
@@ -363,6 +372,7 @@ impl<'a> Graph<'a> for NetworkXGraph {
             same_edge_fn: None,
             same_node_edge_fn: None,
             same_label_cache: None,
+            bound_values: HashMap::new(),
         }
     }
 
@@ -489,14 +499,14 @@ impl std::fmt::Display for NetworkXGraph {
     }
 }
 
-fn to_nx_node(py: Python, node: &Node) -> PyResult<Py<PyAny>> {
-    let attrs_dict = PyDict::new(py);
-    for (k, v) in &node.attributes.0 {
-        attrs_dict.set_item(k, v.clone_ref(py))?;
-    }
-    let nx = py.import("networkx")?;
-    let node = nx.getattr("Node")?.call1((node.id.clone(), attrs_dict))?;
-    Ok(node.into())
+fn to_nx_node(_py: Python, node: &Node) -> PyResult<Py<PyAny>> {
+    // Return the node id as a Python object
+    Python::attach(|py| {
+        let builtins = py.import("builtins")?;
+        let int_fn = builtins.getattr("int")?;
+        let val = int_fn.call1((node.id,))?;
+        Ok(val.into())
+    })
 }
 
 #[pyfunction]
@@ -615,6 +625,100 @@ impl Directed for NetworkXGraph {}
 impl Adjacency<'_> for NetworkXGraph {}
 
 impl AdjacencyInv<'_> for NetworkXGraph {}
+
+impl<'a> Degree<'a> for NetworkXGraph {
+    fn get_out_degree(&'a self) -> DegreeList<'a, Self> {
+        let mut degree_map = HashMap::new();
+        
+        for node in &self.nodes {
+            let out_degree = self.edges.iter()
+                .filter(|edge| edge.source == node.id)
+                .count();
+            degree_map.insert(node, out_degree);
+        }
+        
+        // 使用 unsafe 代码来创建 DegreeList，因为其字段是私有的
+        unsafe { std::mem::transmute::<HashMap<&'a Self::Node, usize>, DegreeList<'a, Self>>(degree_map) }
+    }
+
+    fn get_in_degree(&'a self) -> DegreeList<'a, Self> {
+        let mut degree_map = HashMap::new();
+        
+        for node in &self.nodes {
+            let in_degree = self.edges.iter()
+                .filter(|edge| edge.target == node.id)
+                .count();
+            degree_map.insert(node, in_degree);
+        }
+        
+        // 使用 unsafe 代码来创建 DegreeList，因为其字段是私有的
+        unsafe { std::mem::transmute::<HashMap<&'a Self::Node, usize>, DegreeList<'a, Self>>(degree_map) }
+    }
+
+    fn out_degree(&'a self, degree_list: &DegreeList<'a, Self>, node: &Self::Node) -> usize {
+        // 使用 unsafe 代码访问私有字段
+        unsafe { 
+            let degree_map = &*(degree_list as *const _ as *const HashMap<&'a Self::Node, usize>);
+            *degree_map.get(node).unwrap_or(&0)
+        }
+    }
+
+    fn in_degree(&'a self, degree_list: &DegreeList<'a, Self>, node: &Self::Node) -> usize {
+        // 使用 unsafe 代码访问私有字段
+        unsafe { 
+            let degree_map = &*(degree_list as *const _ as *const HashMap<&'a Self::Node, usize>);
+            *degree_map.get(node).unwrap_or(&0)
+        }
+    }
+}
+
+impl<'a> Bounded<'a> for NetworkXGraph {
+    fn get_bound(&'a self, u: &'a Self::Node, v: &'a Self::Node) -> usize {
+        // 从 u 到 v 的 bound 值。我们定义为 u 节点的 bound_values 中的值
+        // 或者可以定义为基于 (u, v) 对的某个函数
+        *self.bound_values.get(&u.id).unwrap_or(&0)
+    }
+}
+
+#[pyfunction]
+#[pyo3(signature = (nx_graph1, nx_graph2, compare, bound, is_label_cached = false))]
+pub fn get_bounded_simulation(
+    nx_graph1: &Bound<'_, PyAny>, 
+    nx_graph2: &Bound<'_, PyAny>, 
+    compare: Py<PyAny>,
+    bound: Py<PyAny>,
+    is_label_cached: bool
+) -> PyResult<Py<PyAny>> {
+    // 1. 从 NetworkX 图转换
+    let mut graph1 = NetworkXGraph::from_networkx(nx_graph1)?;
+    let graph2 = NetworkXGraph::from_networkx(nx_graph2)?;
+    
+    // 2. 注册 compare 函数
+    graph1.register_compare_fn(compare);
+    
+    // 3. 为 graph1 设置 bound 值
+    graph1.set_bound_values(bound);
+    
+    // 4. 构建缓存
+    if is_label_cached {
+        graph1.build_compare_cache(&graph2);
+    }
+    
+    // 5. 执行 bounded simulation
+    let sim = graph1.get_bounded_simulation(&graph2);
+    
+    // 6. 转换结果为 Python 对象
+    Python::attach(|py| {
+        let map = PyDict::new(py);
+        
+        for (node, set) in sim.iter() {
+            let py_set = PySet::new(py, set.iter().map(|node| to_nx_node(py, node)).collect::<PyResult<Vec<_>>>()?)?;
+            map.set_item(to_nx_node(py, node)?, py_set)?;
+        }
+    
+        Ok(map.into())
+    })
+}
 
 // 模块定义
 // #[pymodule]

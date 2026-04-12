@@ -174,6 +174,15 @@ impl Hypergraph {
             .collect()
     }
 
+    #[staticmethod]
+    pub fn get_hyper_simulation_strict(query: PyRef<Hypergraph>, data: PyRef<Hypergraph>, delta: PyRef<DeltaPy>, d_match: PyRef<DMatchImpl>) -> HashMap<usize, HashSet<usize>> {
+        let delta_inner = DeltaImpl::from(delta.clone(), &*query, &*data);
+        let sim = HyperSimulation::get_hyper_simulation_strict(&*query, &*data, &delta_inner, &*d_match);
+        sim.into_iter()
+            .map(|(k, v)| (k.id(), v.into_iter().map(|n| n.id()).collect()))
+            .collect()
+    }
+
     pub fn get_hyper_simulation_trace(&self) -> Vec<Event> {
         let trace = HyperSimulationTrace::get_trace("hyper_simulation.trace").unwrap();
         let events = trace.into_iter().map(|event| {

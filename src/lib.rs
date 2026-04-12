@@ -21,5 +21,6 @@ fn simulation(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(graph::networkx_graph::is_simulation_isomorphic_fn, m)?)?;
     m.add_function(wrap_pyfunction!(graph::networkx_graph::is_simulation_isomorphic_of_edge_fn, m)?)?;
     m.add_function(wrap_pyfunction!(graph::networkx_graph::is_simulation_isomorphic_of_node_edge_fn, m)?)?;
+    m.add_function(wrap_pyfunction!(graph::networkx_graph::get_bounded_simulation, m)?)?;
     Ok(())
 }
