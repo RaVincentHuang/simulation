@@ -188,9 +188,9 @@ dependencies = [
 
 [[package]]
 name = "graph-simulation"
-version = "0.1.25"
+version = "0.1.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f56f1442ddd23a716bdc42a3d1a53a08a4dd07dc9801e2ea102cbd1b1ff6677d"
+checksum = "d9d438a0ffa1040ffc4355fe60bdbab50e4b08e51f879258666b5c9361c9daeb"
 dependencies = [
  "bincode",
  "env_logger",
@@ -543,7 +543,7 @@ dependencies = [
 
 [[package]]
 name = "simulation"
-version = "0.1.11"
+version = "0.1.13"
 dependencies = [
  "graph-base",
  "graph-simulation",
