@@ -448,6 +448,13 @@ impl<'a> Delta<'a> for DeltaImpl<'a> {
 impl<'a> DeltaImpl<'a> {
     fn from(delta: DeltaPy, query: &'a Hypergraph, data: &'a Hypergraph) -> Self {
         let mut pair_map: HashMap<(&Node, &Node), Vec<(SematicCluster<'a, Hyperedge>, SematicCluster<'a, Hyperedge>)>> = HashMap::new();
+
+        for u in &query.nodes {
+            for v in &data.nodes {
+                pair_map.entry((u, v)).or_default();
+            }
+        }
+
         for ((u_id, v_id), pairs) in delta.sematic_cluster_cache {
             let u = query.nodes.get(u_id).unwrap();
             let v = data.nodes.get(v_id).unwrap();
